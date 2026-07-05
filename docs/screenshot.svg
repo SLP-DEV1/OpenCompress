@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="OpenCompress Studio screenshot placeholder">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#171923"/>
+      <stop offset="1" stop-color="#090b10"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff4f66"/>
+      <stop offset="1" stop-color="#ff8b57"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" rx="36" fill="url(#bg)"/>
+  <circle cx="180" cy="80" r="220" fill="#ff4f66" opacity="0.12"/>
+  <circle cx="1150" cy="120" r="260" fill="#3e87ee" opacity="0.10"/>
+  <rect x="56" y="50" width="1168" height="130" rx="28" fill="#ffffff" opacity="0.07"/>
+  <text x="92" y="98" fill="#ff6576" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="700" letter-spacing="3">OPENCOMPRESS STUDIO V2</text>
+  <text x="92" y="145" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="42" font-weight="800">Local batch image compressor</text>
+  <rect x="56" y="210" width="330" height="460" rx="26" fill="#10141d" stroke="#ffffff" stroke-opacity="0.08"/>
+  <rect x="88" y="250" width="266" height="100" rx="18" fill="#ffffff" opacity="0.05" stroke="#ffffff" stroke-opacity="0.2" stroke-dasharray="8 8"/>
+  <text x="128" y="306" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="700">Drop images here</text>
+  <rect x="88" y="386" width="266" height="42" rx="12" fill="#ffffff" opacity="0.08"/>
+  <rect x="88" y="446" width="266" height="42" rx="12" fill="#ffffff" opacity="0.08"/>
+  <rect x="88" y="526" width="266" height="52" rx="14" fill="url(#accent)"/>
+  <text x="145" y="560" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="800">Compress images</text>
+  <rect x="420" y="210" width="804" height="460" rx="26" fill="#10141d" stroke="#ffffff" stroke-opacity="0.08"/>
+  <rect x="452" y="246" width="500" height="300" rx="22" fill="#151a24"/>
+  <rect x="452" y="246" width="250" height="300" rx="22" fill="#232938"/>
+  <line x1="702" y1="246" x2="702" y2="546" stroke="#ffffff" stroke-width="3"/>
+  <text x="472" y="282" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="800">Before</text>
+  <text x="872" y="282" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="800">After</text>
+  <rect x="980" y="246" width="210" height="300" rx="22" fill="#ffffff" opacity="0.05"/>
+  <text x="1010" y="298" fill="#8e98aa" font-family="Inter,Arial,sans-serif" font-size="16">Original</text>
+  <text x="1100" y="298" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="700">2.4 MB</text>
+  <text x="1010" y="352" fill="#8e98aa" font-family="Inter,Arial,sans-serif" font-size="16">Optimized</text>
+  <text x="1100" y="352" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="700">680 KB</text>
+  <text x="1010" y="406" fill="#8e98aa" font-family="Inter,Arial,sans-serif" font-size="16">Saved</text>
+  <text x="1100" y="406" fill="#7ff3a2" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="800">-72%</text>
+  <rect x="980" y="472" width="210" height="52" rx="14" fill="url(#accent)"/>
+  <text x="1034" y="506" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="800">Download ZIP</text>
+  <rect x="452" y="574" width="738" height="56" rx="16" fill="#ffffff" opacity="0.05"/>
+  <text x="480" y="608" fill="#cbd4e2" font-family="Inter,Arial,sans-serif" font-size="18">Batch results • local only • optional reSmush.it API</text>
+</svg>

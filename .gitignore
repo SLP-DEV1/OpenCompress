@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# builds
+/dist/
+/.vite/
+
+# local runtime
+.opencompress/
+.opencompress*.log
+.opencompress*.txt
+.opencompress*.bat
+
+# exports and user files
+*.zip
+exports/
+output/
+*.psd
+*.psb
+*.tif
+*.tiff
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# npm/yarn/pnpm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
