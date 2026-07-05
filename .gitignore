@@ -19,7 +19,7 @@ output/
 *.psb
 *.tif
 *.tiff
-
+.qwen
 # env
 .env
 .env.local
