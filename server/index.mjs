@@ -38,7 +38,7 @@ const upload = multer({
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, version: '0.2.0', maxUploadMb, jobTtlMs });
+  res.json({ ok: true, version: '2.1.0', maxUploadMb, jobTtlMs });
 });
 
 app.post('/api/jobs', upload.array('images', 250), async (req, res) => {
@@ -54,10 +54,11 @@ app.post('/api/jobs', upload.array('images', 250), async (req, res) => {
   mkdirSync(jobDir, { recursive: true });
 
   const results = [];
-  for (const file of files) {
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
     const started = Date.now();
     try {
-      const result = await processOneImage(file, settings, jobDir, jobId);
+      const result = await processOneImage(file, settings, jobDir, jobId, index);
       results.push({ ...result, durationMs: Date.now() - started });
     } catch (error) {
       results.push({
@@ -77,7 +78,7 @@ app.post('/api/jobs', upload.array('images', 250), async (req, res) => {
   const successful = results.filter((item) => item.status !== 'failed' && item.outputName);
   const zipPath = path.join(jobDir, 'opencompress-results.zip');
   if (successful.length) {
-    await createZip(jobDir, zipPath, successful);
+    await createZip(jobDir, zipPath, successful, settings);
   }
 
   const manifest = {
@@ -90,8 +91,8 @@ app.post('/api/jobs', upload.array('images', 250), async (req, res) => {
 
   const totalOriginal = results.reduce((sum, item) => sum + Number(item.inputSize || 0), 0);
   const totalOutput = results.reduce((sum, item) => sum + Number(item.outputSize || item.inputSize || 0), 0);
-  const savedBytes = Math.max(0, totalOriginal - totalOutput);
-  const savedPercent = totalOriginal ? Math.round((savedBytes / totalOriginal) * 1000) / 10 : 0;
+  const savedBytes = totalOriginal - totalOutput;
+  const savedPercent = totalOriginal ? roundOne((savedBytes / totalOriginal) * 100) : 0;
 
   res.json({
     jobId,
@@ -165,7 +166,7 @@ app.listen(port, host, () => {
 
 function parseSettings(raw) {
   const parsed = raw ? JSON.parse(String(raw)) : {};
-  const mode = ['local', 'resmush', 'auto'].includes(parsed.mode) ? parsed.mode : 'local';
+  const mode = ['local', 'resmush', 'auto', 'best'].includes(parsed.mode) ? parsed.mode : 'local';
   const format = ['original', 'jpeg', 'png', 'webp'].includes(parsed.format) ? parsed.format : 'webp';
   const quality = clampNumber(parsed.quality, 1, 100, 82);
   const resizeEnabled = Boolean(parsed.resizeEnabled);
@@ -174,26 +175,61 @@ function parseSettings(raw) {
   const keepMetadata = Boolean(parsed.keepMetadata);
   const keepExif = Boolean(parsed.keepExif);
   const resmushQuality = clampNumber(parsed.resmushQuality ?? quality, 0, 100, 92);
-  return { mode, format, quality, resizeEnabled, maxWidth, maxHeight, keepMetadata, keepExif, resmushQuality };
+  const fairCompare = Boolean(parsed.fairCompare);
+  const targetSizeEnabled = Boolean(parsed.targetSizeEnabled);
+  const targetSizeKb = clampNumber(parsed.targetSizeKb, 10, 100000, 300);
+  const keepOriginalIfLarger = parsed.keepOriginalIfLarger !== false;
+  const background = sanitizeColor(parsed.background || '#ffffff');
+  const renameEnabled = Boolean(parsed.renameEnabled);
+  const renameBase = sanitizeBaseName(parsed.renameBase || 'optimized-image') || 'optimized-image';
+  const renameStart = clampNumber(parsed.renameStart, 0, 999999, 1);
+  const renamePad = clampNumber(parsed.renamePad, 1, 8, 3);
+  return {
+    mode,
+    format,
+    quality,
+    resizeEnabled,
+    maxWidth,
+    maxHeight,
+    keepMetadata,
+    keepExif,
+    resmushQuality,
+    fairCompare,
+    targetSizeEnabled,
+    targetSizeKb,
+    keepOriginalIfLarger,
+    background,
+    renameEnabled,
+    renameBase,
+    renameStart,
+    renamePad
+  };
 }
 
-async function processOneImage(file, settings, jobDir, jobId) {
+async function processOneImage(file, settings, jobDir, jobId, index) {
   const input = file.buffer;
   const originalName = file.originalname || 'image';
   const inputSize = input.length;
   const mime = file.mimetype || guessMime(originalName);
-  const baseName = sanitizeBaseName(originalName);
-
-  const local = async () => compressLocal(input, settings, mime);
-  const external = async () => compressResmush(input, originalName, mime, settings);
+  const baseName = getOutputBaseName(originalName, settings, index);
+  const originalMetadata = await readMetadata(input);
+  const originalFormat = originalMetadata.format || formatFromMime(mime);
+  const inputWidth = originalMetadata.width || null;
+  const inputHeight = originalMetadata.height || null;
+  const hasAlpha = Boolean(originalMetadata.hasAlpha);
+  const warnings = [];
 
   let selected;
   let method;
   let message = '';
+  let candidates = [];
+
+  const local = async (overrides = {}) => compressLocal(input, { ...settings, ...overrides }, mime, originalMetadata);
+  const external = async () => compressResmush(input, originalName, mime, settings, originalMetadata);
 
   if (settings.mode === 'local') {
     selected = await local();
-    method = 'local';
+    method = selected.method || 'local';
   } else if (settings.mode === 'resmush') {
     try {
       selected = await external();
@@ -203,23 +239,46 @@ async function processOneImage(file, settings, jobDir, jobId) {
       method = 'local-fallback';
       message = `reSmush.it failed: ${getErrorMessage(error)} Local compression was used.`;
     }
-  } else {
-    const localResult = await local();
+  } else if (settings.mode === 'auto') {
+    const fairSettings = settings.fairCompare
+      ? { format: 'original', resizeEnabled: false, quality: settings.resmushQuality, targetSizeEnabled: false }
+      : {};
+    const localResult = await local(fairSettings);
+    candidates.push(toCandidateSummary(localResult, 'local'));
     try {
       const externalResult = await external();
+      candidates.push(toCandidateSummary(externalResult, 'resmush'));
       if (externalResult.buffer.length < localResult.buffer.length) {
         selected = externalResult;
         method = 'resmush';
       } else {
         selected = localResult;
-        method = 'local';
-        message = 'Local compression was smaller than reSmush.it.';
+        method = settings.fairCompare ? 'local-fair' : 'local';
+        message = settings.fairCompare ? 'Fair Compare: local result was smaller.' : 'Local compression was smaller than reSmush.it.';
       }
     } catch (error) {
       selected = localResult;
       method = 'local-fallback';
       message = `reSmush.it failed: ${getErrorMessage(error)} Local compression was used.`;
     }
+  } else {
+    const bestResult = await compressAutoBest(input, settings, mime, originalMetadata);
+    selected = bestResult.selected;
+    candidates = bestResult.candidates;
+    method = selected.method || 'auto-best';
+    message = bestResult.message;
+  }
+
+  if (selected.requiresFlattenWarning || (hasAlpha && selected.format === 'jpeg')) {
+    warnings.push(`Transparency was flattened to ${settings.background} because JPG does not support alpha.`);
+  }
+  if (settings.targetSizeEnabled && selected.targetReached === false) {
+    warnings.push(`Target size ${settings.targetSizeKb} KB could not be reached without using the lowest tested quality.`);
+  }
+  if (settings.keepOriginalIfLarger && selected.buffer.length > inputSize) {
+    selected = await originalAsResult(input, originalMetadata, originalName);
+    method = 'original-kept';
+    message = [message, 'Optimized result was larger, so the original file was kept.'].filter(Boolean).join(' ');
   }
 
   const outputExt = selected.extension || extensionFromFormat(selected.format);
@@ -229,7 +288,8 @@ async function processOneImage(file, settings, jobDir, jobId) {
 
   const outputSize = selected.buffer.length;
   const savedBytes = inputSize - outputSize;
-  const savedPercent = inputSize ? Math.round((savedBytes / inputSize) * 1000) / 10 : 0;
+  const savedPercent = inputSize ? roundOne((savedBytes / inputSize) * 100) : 0;
+  const targetBytes = settings.targetSizeEnabled ? settings.targetSizeKb * 1024 : null;
 
   return {
     originalName,
@@ -239,16 +299,55 @@ async function processOneImage(file, settings, jobDir, jobId) {
     outputSize,
     savedBytes,
     savedPercent,
+    inputWidth,
+    inputHeight,
     width: selected.width || null,
     height: selected.height || null,
+    originalFormat,
     format: selected.format,
+    quality: selected.quality ?? null,
     method,
-    status: outputSize <= inputSize ? 'optimized' : 'converted',
-    message
+    status: statusFromSizes(outputSize, inputSize, method),
+    message,
+    warnings,
+    candidates,
+    targetBytes,
+    targetReached: selected.targetReached ?? null
   };
 }
 
-async function compressLocal(input, settings, mime) {
+async function compressLocal(input, settings, mime, existingMetadata = null) {
+  const metadata = existingMetadata || await readMetadata(input);
+  const targetFormat = resolveTargetFormat(settings.format, mime, metadata.format);
+  const targetBytes = settings.targetSizeEnabled && isQualityFormat(targetFormat) ? settings.targetSizeKb * 1024 : null;
+
+  const build = (quality) => buildSharpPipeline(input, settings, targetFormat, quality, metadata);
+
+  if (targetBytes) {
+    const targetResult = await encodeToTargetSize(build, targetBytes, settings.quality);
+    return {
+      ...targetResult,
+      method: 'local-target',
+      extension: extensionFromFormat(targetResult.format),
+      requiresFlattenWarning: metadata.hasAlpha && targetFormat === 'jpeg'
+    };
+  }
+
+  const { data, info } = await build(settings.quality).toBuffer({ resolveWithObject: true });
+  return {
+    buffer: data,
+    format: info.format,
+    width: info.width,
+    height: info.height,
+    quality: settings.quality,
+    targetReached: null,
+    extension: extensionFromFormat(info.format),
+    method: 'local',
+    requiresFlattenWarning: metadata.hasAlpha && targetFormat === 'jpeg'
+  };
+}
+
+function buildSharpPipeline(input, settings, targetFormat, quality, metadata) {
   let image = sharp(input, { failOn: 'none', animated: false }).rotate();
 
   if (settings.resizeEnabled) {
@@ -260,26 +359,76 @@ async function compressLocal(input, settings, mime) {
     });
   }
 
-  const targetFormat = resolveTargetFormat(settings.format, mime);
-  if (settings.keepMetadata) {
-    image = image.withMetadata();
-  }
+  if (settings.keepMetadata) image = image.withMetadata();
 
   if (targetFormat === 'jpeg') {
-    image = image.flatten({ background: '#ffffff' }).jpeg({ quality: settings.quality, mozjpeg: true });
+    image = image.flatten({ background: settings.background || '#ffffff' }).jpeg({ quality, mozjpeg: true });
   } else if (targetFormat === 'png') {
-    image = image.png({ compressionLevel: 9, effort: 10, palette: true, quality: settings.quality });
+    image = image.png({ compressionLevel: 9, effort: 10, palette: true, quality });
   } else if (targetFormat === 'webp') {
-    image = image.webp({ quality: settings.quality, effort: 5 });
+    image = image.webp({ quality, effort: 5, alphaQuality: metadata.hasAlpha ? quality : undefined });
   } else {
     image = image.png({ compressionLevel: 9, effort: 10 });
   }
 
-  const { data, info } = await image.toBuffer({ resolveWithObject: true });
-  return { buffer: data, format: info.format, width: info.width, height: info.height, extension: extensionFromFormat(info.format) };
+  return image;
 }
 
-async function compressResmush(input, originalName, mime, settings) {
+async function encodeToTargetSize(build, targetBytes, preferredQuality) {
+  let low = 35;
+  let high = Math.min(100, Math.max(1, preferredQuality));
+  let bestUnder = null;
+  let smallest = null;
+
+  for (let step = 0; step < 7 && low <= high; step += 1) {
+    const quality = Math.round((low + high) / 2);
+    const { data, info } = await build(quality).toBuffer({ resolveWithObject: true });
+    const result = { buffer: data, format: info.format, width: info.width, height: info.height, quality, targetReached: data.length <= targetBytes };
+    if (!smallest || data.length < smallest.buffer.length) smallest = result;
+    if (data.length <= targetBytes) {
+      bestUnder = result;
+      low = quality + 1;
+    } else {
+      high = quality - 1;
+    }
+  }
+
+  return bestUnder || { ...smallest, targetReached: false };
+}
+
+async function compressAutoBest(input, settings, mime, metadata) {
+  const candidates = [];
+  const hasAlpha = Boolean(metadata.hasAlpha);
+  const formats = hasAlpha ? ['webp', 'png'] : ['webp', 'jpeg'];
+  if (settings.format !== 'original' && !formats.includes(settings.format)) formats.unshift(settings.format);
+
+  for (const format of [...new Set(formats)]) {
+    try {
+      const result = await compressLocal(input, { ...settings, format }, mime, metadata);
+      result.method = `auto-best-${format}`;
+      candidates.push(result);
+    } catch (error) {
+      candidates.push({ error: getErrorMessage(error), method: `auto-best-${format}` });
+    }
+  }
+
+  if (settings.mode === 'best' && settings.fairCompare === false) {
+    // Intentionally local-only. reSmush.it remains available through Auto mode to avoid unexpected uploads.
+  }
+
+  const valid = candidates.filter((item) => item.buffer);
+  if (!valid.length) throw new Error('Auto Best could not create any local candidate.');
+  valid.sort((a, b) => a.buffer.length - b.buffer.length);
+  const selected = valid[0];
+
+  return {
+    selected,
+    candidates: candidates.map((item) => item.buffer ? toCandidateSummary(item, item.method) : { method: item.method, error: item.error }),
+    message: `Auto Best selected ${selected.format?.toUpperCase?.() || selected.format} as the smallest local result.`
+  };
+}
+
+async function compressResmush(input, originalName, mime, settings, existingMetadata = null) {
   if (input.length >= 5 * 1024 * 1024) {
     throw new Error('File is too large for reSmush.it. Maximum supported size is under 5 MB.');
   }
@@ -298,52 +447,54 @@ async function compressResmush(input, originalName, mime, settings) {
     method: 'POST',
     body: formData,
     headers: {
-      'User-Agent': process.env.OPENCOMPRESS_USER_AGENT || 'OpenCompress-Studio/0.2.0',
+      'User-Agent': process.env.OPENCOMPRESS_USER_AGENT || 'OpenCompress-Studio/2.1.0',
       Referer: process.env.OPENCOMPRESS_PUBLIC_REFERER || 'https://github.com/opencompress-studio/opencompress-studio'
     }
   });
 
-  if (!response.ok) {
-    throw new Error(`reSmush.it HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`reSmush.it HTTP ${response.status}`);
 
   const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error_log || data.error || 'reSmush.it returned an error.');
-  }
-  if (!data.dest) {
-    throw new Error('reSmush.it response did not include an optimized file URL.');
-  }
+  if (data.error) throw new Error(data.error_log || data.error || 'reSmush.it returned an error.');
+  if (!data.dest) throw new Error('reSmush.it response did not include an optimized file URL.');
 
   const optimized = await fetch(data.dest, {
     headers: {
-      'User-Agent': process.env.OPENCOMPRESS_USER_AGENT || 'OpenCompress-Studio/0.2.0',
+      'User-Agent': process.env.OPENCOMPRESS_USER_AGENT || 'OpenCompress-Studio/2.1.0',
       Referer: process.env.OPENCOMPRESS_PUBLIC_REFERER || 'https://github.com/opencompress-studio/opencompress-studio'
     }
   });
-  if (!optimized.ok) {
-    throw new Error(`Could not download optimized reSmush.it result: HTTP ${optimized.status}`);
-  }
+  if (!optimized.ok) throw new Error(`Could not download optimized reSmush.it result: HTTP ${optimized.status}`);
 
   const arrayBuffer = await optimized.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  let metadata = {};
-  try {
-    metadata = await sharp(buffer, { failOn: 'none' }).metadata();
-  } catch {
-    metadata = {};
-  }
+  const metadata = await readMetadata(buffer, existingMetadata);
 
   return {
     buffer,
     format: metadata.format || formatFromMime(mime),
     width: metadata.width,
     height: metadata.height,
-    extension: extensionFromFormat(metadata.format || formatFromMime(mime))
+    quality: settings.resmushQuality,
+    extension: extensionFromFormat(metadata.format || formatFromMime(mime)),
+    method: 'resmush',
+    targetReached: null
   };
 }
 
-async function createZip(jobDir, zipPath, results) {
+async function originalAsResult(input, metadata, originalName) {
+  return {
+    buffer: input,
+    format: metadata.format || formatFromMime(guessMime(originalName)),
+    width: metadata.width || null,
+    height: metadata.height || null,
+    quality: null,
+    extension: extensionFromFormat(metadata.format || formatFromMime(guessMime(originalName))),
+    targetReached: null
+  };
+}
+
+async function createZip(jobDir, zipPath, results, settings) {
   await new Promise((resolve, reject) => {
     const zipFile = new ZipFile();
     const output = createWriteStream(zipPath);
@@ -357,7 +508,7 @@ async function createZip(jobDir, zipPath, results) {
       zipFile.addFile(path.join(jobDir, result.outputName), result.outputName);
     }
 
-    zipFile.addBuffer(Buffer.from(JSON.stringify({ generatedAt: new Date().toISOString(), results }, null, 2)), 'opencompress-report.json');
+    zipFile.addBuffer(Buffer.from(JSON.stringify({ generatedAt: new Date().toISOString(), settings, results }, null, 2)), 'opencompress-report.json');
     zipFile.end();
   });
 }
@@ -378,6 +529,39 @@ function cleanOldJobs() {
   }
 }
 
+async function readMetadata(input, fallback = {}) {
+  try {
+    return await sharp(input, { failOn: 'none' }).metadata();
+  } catch {
+    return fallback || {};
+  }
+}
+
+function getOutputBaseName(originalName, settings, index) {
+  if (!settings.renameEnabled) return sanitizeBaseName(originalName);
+  const number = String(settings.renameStart + index).padStart(settings.renamePad, '0');
+  return sanitizeBaseName(`${settings.renameBase}-${number}`);
+}
+
+function toCandidateSummary(result, method) {
+  return {
+    method,
+    size: result.buffer?.length || 0,
+    format: result.format || null,
+    quality: result.quality ?? null,
+    width: result.width || null,
+    height: result.height || null,
+    targetReached: result.targetReached ?? null
+  };
+}
+
+function statusFromSizes(outputSize, inputSize, method) {
+  if (method === 'original-kept') return 'kept-original';
+  if (outputSize < inputSize) return 'optimized';
+  if (outputSize === inputSize) return 'same-size';
+  return 'larger';
+}
+
 function sanitizeId(value) {
   return String(value || '').replace(/[^a-zA-Z0-9-]/g, '');
 }
@@ -390,7 +574,7 @@ function sanitizeBaseName(fileName) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
+    .slice(0, 90);
   return clean || 'image';
 }
 
@@ -411,9 +595,22 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, Math.round(parsed)));
 }
 
-function resolveTargetFormat(format, mime) {
+function roundOne(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function sanitizeColor(value) {
+  const raw = String(value || '#ffffff').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : '#ffffff';
+}
+
+function isQualityFormat(format) {
+  return format === 'jpeg' || format === 'webp';
+}
+
+function resolveTargetFormat(format, mime, detectedFormat) {
   if (format !== 'original') return format;
-  const detected = formatFromMime(mime);
+  const detected = detectedFormat || formatFromMime(mime);
   return ['jpeg', 'png', 'webp'].includes(detected) ? detected : 'png';
 }
 

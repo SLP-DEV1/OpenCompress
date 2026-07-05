@@ -300,3 +300,84 @@ h3 { margin-bottom: 16px; }
   .two-cols { grid-template-columns: 1fr; }
   .before-after { height: 320px; }
 }
+
+.info-box, .warning-box {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 15px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.info-box { border: 1px solid rgba(130, 180, 255, 0.25); background: rgba(80, 130, 255, 0.1); color: #c6d9ff; }
+.warning-box { border: 1px solid rgba(255, 193, 7, 0.32); background: rgba(255, 193, 7, 0.1); color: #ffe2a4; }
+
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 101, 118, 0.35);
+  background: rgba(255, 101, 118, 0.12);
+  color: #ffb8c1;
+  font-weight: 800;
+}
+
+.preview-title-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.preview-title-row select {
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #f6f8fb;
+}
+.preview-title-row option { color: #111827; }
+.preview-meta { color: #8e98aa; font-size: 0.8rem; }
+.before-after img { transform-origin: center; transition: transform 0.16s ease; }
+
+.candidate-card {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.035);
+}
+.candidate-card h3 { margin-bottom: 10px; }
+.candidate-list { display: flex; flex-wrap: wrap; gap: 10px; }
+.candidate-pill {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.18);
+  color: #cbd4e2;
+  font-size: 0.82rem;
+}
+.candidate-pill strong { color: #ffffff; }
+.candidate-pill span { color: #9aa5b8; }
+
+.positive-text { color: #7ff3a2; font-weight: 800; }
+.negative-text { color: #ff9aaa; font-weight: 800; }
+.warning-text { color: #ffe2a4 !important; }
+.summary-row.highlight.negative strong { color: #ff9aaa; }
+.status.larger { color: #ff9aaa; background: rgba(255, 101, 118, 0.1); }
+.status.same-size { color: #dce3ef; background: rgba(255, 255, 255, 0.08); }
+.status.kept-original { color: #c6d9ff; background: rgba(80, 130, 255, 0.12); }
+
+.results-table { min-width: 1120px; }
+.results-table td { vertical-align: top; }
+
+.field input[type="color"] {
+  height: 44px;
+  padding: 5px;
+}

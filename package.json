@@ -1,16 +1,16 @@
 {
   "name": "opencompress-studio",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
-  "description": "Local browser-based batch image compressor with optional reSmush.it API support.",
+  "description": "Local browser-based shop image optimizer with Auto Best, target-size compression, SEO rename and optional reSmush.it API support.",
   "scripts": {
     "dev": "node server/index.mjs",
     "start": "node server/index.mjs --production",
     "preview": "node server/index.mjs --production",
-    "build": "npm run typecheck && node node_modules/vite/bin/vite.js build",
-    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
-    "typecheck:strict": "node node_modules/typescript/bin/tsc --noEmit --noUnusedLocals --noUnusedParameters",
+    "build": "npm run typecheck && vite build",
+    "typecheck": "tsc --noEmit",
+    "typecheck:strict": "tsc --noEmit --noUnusedLocals --noUnusedParameters",
     "clean": "node -e \"const fs=require('fs'); for (const p of ['dist','node_modules','.opencompress']) if (fs.existsSync(p)) fs.rmSync(p,{recursive:true,force:true});\""
   },
   "dependencies": {
@@ -19,7 +19,7 @@
     "multer": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "sharp": "^0.35.3",
+    "sharp": "latest",
     "vite": "latest",
     "yazl": "^3.3.1"
   },

@@ -1,32 +1,28 @@
-# Release Notes
-
-## 2.0.1 - Public npm registry lockfile fix
-
-- Replaced internal build-environment package tarball URLs in `package-lock.json` with public `registry.npmjs.org` URLs.
-- Added `.npmrc` to force the public npm registry for local installs.
-- This fixes `npm install` errors that referenced an internal build-environment registry.
-
-# OpenCompress Studio V2.0.0
-
-Initial public release package.
+# OpenCompress Studio 2.1.0
 
 ## Added
 
-- Local batch image compression with Node.js and sharp
-- Optional reSmush.it API compression mode
-- Auto mode that keeps the smaller result
-- JPG, PNG and WebP output
-- Resize settings
-- Metadata removal by default
-- Before/after preview slider
-- ZIP export with JSON report
-- Windows start/stop helper files
-- English GitHub README
-- MIT License
-- GitHub Actions CI workflow
+- Auto Best local mode that tests multiple local output candidates and keeps the smallest result.
+- Fair Compare mode for local-vs-reSmush.it comparisons.
+- Target file size mode for JPG/WebP output.
+- SEO batch rename with custom base name, start number and padding.
+- Transparency warning and custom JPG flatten background color.
+- Keep-original-if-larger safety option.
+- Cancel Batch button in the UI.
+- Before/after preview zoom.
+- Candidate comparison panel for Auto Best and Auto Compare results.
+- Expanded results table with format, dimensions, quality, method, status and warnings.
+- More specific shop/image presets.
+
+## Changed
+
+- Local compression now reports original and output dimensions/formats.
+- Auto Compare can run in a fair mode with no resize, original format and matching quality.
+- ZIP report now includes settings and detailed result metadata.
+- README updated for the V2.1 workflow.
 
 ## Notes
 
-- Local only mode keeps images on the user's computer.
-- reSmush.it mode uploads selected files to an external API.
-- The release ZIP excludes node_modules, dist and runtime files.
+- reSmush.it remains optional and uploads selected files to an external API only when explicitly selected.
+- Local only and Auto Best local modes do not upload images externally.
+- `node_modules/`, `dist/` and `.opencompress/` are excluded from the release package.

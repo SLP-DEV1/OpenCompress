@@ -1,8 +1,8 @@
 # OpenCompress Studio
 
-OpenCompress Studio is a local browser-based batch image compressor for small e-commerce sellers, print shops, artists and content creators.
+OpenCompress Studio is a local browser-based image optimizer for e-commerce sellers, print shops, artists and content creators.
 
-It lets you upload multiple images, compress them locally, resize them, convert them to JPG/PNG/WebP, compare before/after previews and download all optimized files as a ZIP batch.
+It lets you upload multiple images, compress them locally, resize them, convert them to JPG/PNG/WebP, compare before/after previews, rename files for SEO and download all optimized files as a ZIP batch.
 
 The app runs on your own computer through a small local Node.js server. Local compression is handled with `sharp`. Optional external compression can be enabled with the reSmush.it API.
 
@@ -17,15 +17,23 @@ The app runs on your own computer through a small local Node.js server. Local co
 - Upload multiple JPG, PNG, WebP, GIF, TIF or BMP images
 - Local image compression with `sharp`
 - Optional reSmush.it API mode
-- Auto mode: compare local result with reSmush.it and keep the smaller file
+- Auto Compare mode: compare local result with reSmush.it and keep the smaller file
+- Fair Compare mode for local-vs-reSmush tests with same format, no resize and same quality
+- Auto Best local mode for testing multiple local output candidates and picking the smallest result
+- Target file size mode for JPG/WebP output, for example max. 300 KB per image
 - JPG, PNG and WebP output
 - Resize to maximum width and height
 - Metadata removal by default
 - Optional EXIF preservation for reSmush.it mode
-- Before/after preview slider
-- Batch results table with file savings
-- ZIP export with all optimized files
-- Presets for WooCommerce, Amazon, Etsy, Instagram and transparent PNG workflows
+- Transparency warning when converting alpha images to JPG
+- Custom background color for JPG flattening
+- SEO batch rename with base name, number start and padding
+- Keep-original-if-larger safety option
+- Before/after preview slider with zoom
+- Candidate comparison for Auto Best and Auto Compare results
+- Detailed results table with format, dimensions, quality, method, status and savings
+- ZIP export with all optimized files and `opencompress-report.json`
+- Presets for WooCommerce, Amazon, Etsy, Instagram, transparent PNG and small web thumbnails
 - Windows `start.bat` and `stop.bat` helper scripts
 - GitHub Actions CI workflow
 
@@ -33,13 +41,14 @@ The app runs on your own computer through a small local Node.js server. Local co
 
 ## Current status
 
-OpenCompress Studio V2 is a release-ready local Vite/React + Node app.
+OpenCompress Studio V2.1 is a release-ready local Vite/React + Node app.
 
 | Mode | Works offline | Uploads images externally | Notes |
 | --- | --- | --- | --- |
 | Local only | Yes | No | Recommended default mode |
+| Auto Best local | Yes | No | Tests local JPG/WebP/PNG candidates and keeps the smallest result |
 | reSmush.it API | No | Yes | Optional external compression |
-| Auto | No | Yes, for comparison | Uses smaller result when available |
+| Auto Compare | No | Yes, for comparison | Compares local result with reSmush.it when available |
 
 The default mode is **Local only** so your images stay on your computer.
 
@@ -181,8 +190,45 @@ OPENCOMPRESS_HOST=127.0.0.1
 OPENCOMPRESS_MAX_UPLOAD_MB=100
 OPENCOMPRESS_JOB_TTL_MS=3600000
 OPENCOMPRESS_PUBLIC_REFERER=https://github.com/your-name/opencompress-studio
-OPENCOMPRESS_USER_AGENT=OpenCompress-Studio/0.2.0
+OPENCOMPRESS_USER_AGENT=OpenCompress-Studio/2.1.0
 ```
+
+---
+
+## Recommended workflows
+
+### WooCommerce product images
+
+```text
+Mode: Local only or Auto Best local
+Format: WebP
+Quality: 82
+Max size: 1600 × 1600 px
+Metadata: remove
+```
+
+### Amazon main images
+
+```text
+Mode: Local only
+Format: JPG
+Quality: 90
+Max size: 2000 × 2000 px
+Background: white
+Metadata: remove
+```
+
+### Transparent PNG designs
+
+```text
+Mode: Local only or Auto Best local
+Format: PNG or WebP
+Avoid JPG unless you want to flatten transparency
+```
+
+### Target file size
+
+Enable **Target file size** and enter a max KB value. This works best with JPG and WebP. The app searches for the highest quality that gets close to the requested target.
 
 ---
 
@@ -191,10 +237,11 @@ OPENCOMPRESS_USER_AGENT=OpenCompress-Studio/0.2.0
 1. Upload one or more images.
 2. Choose a compression method.
 3. Pick an output format and quality.
-4. Enable resize if needed.
-5. Click **Compress images**.
-6. Compare before/after preview.
-7. Download the ZIP batch.
+4. Enable resize and target size if needed.
+5. Enable SEO batch rename if needed.
+6. Click **Compress images**.
+7. Compare before/after preview and candidate results.
+8. Download the ZIP batch.
 
 ---
 
@@ -221,44 +268,18 @@ npm install
 
 ## Roadmap
 
-Planned or recommended future improvements:
+Possible next improvements:
 
-- AVIF output
-- Browser-only light mode for static hosting
-- Drag-and-drop image ordering
-- Batch rename and SEO file names
-- Target file size mode, for example "make every image under 300 KB"
-- Advanced artifact detection / quality scoring
-- Optional AI upscaling backend with Real-ESRGAN
-- Product-image enhancement presets
-- Docker image for VPS hosting
-
----
-
-## Contributing
-
-Issues and pull requests are welcome.
-
-Before submitting changes, please run:
-
-```bash
-npm run typecheck:strict
-npm run build
-```
-
-Do not commit:
-
-```text
-node_modules/
-dist/
-.opencompress/
-private images
-local runtime logs
-ZIP exports
-```
+- Real queue progress with per-file streaming status
+- Drag-and-drop file sorting
+- AVIF export support
+- Visual quality scoring / SSIM comparison
+- Optional local AI upscaling backend
+- Saved custom presets
+- Multi-language UI
 
 ---
 
 ## License
 
-MIT License. See `LICENSE` for details.
+MIT License. See `LICENSE`.
