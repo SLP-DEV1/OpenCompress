@@ -42,6 +42,10 @@ async function main() {
     throw new Error('No input files or directories supplied. Run with --help for usage.');
   }
 
+  if (options.targetSizeKb && !options.autoBest && options.format === 'png') {
+    throw new Error('--target-size-kb supports JPG/WebP output. Use --auto-best if you want PNG to participate as an additional candidate.');
+  }
+
   const outputDir = path.resolve(options.output);
   const files = await collectInputFiles(options.inputs, options.recursive, outputDir);
   if (!files.length) {
@@ -76,6 +80,8 @@ async function main() {
 
   const summary = {
     version: VERSION,
+    mode: options.autoBest ? 'auto-best' : options.targetSizeKb ? 'target-size' : 'local',
+    targetSizeKb: options.targetSizeKb,
     outputDir,
     processed: successful.length,
     failed,
@@ -107,6 +113,8 @@ function parseArgs(argv) {
     maxWidth: null,
     maxHeight: null,
     recursive: false,
+    autoBest: false,
+    targetSizeKb: null,
     keepOriginalIfLarger: true,
     background: '#ffffff',
     json: false,
@@ -155,6 +163,13 @@ function parseArgs(argv) {
       case '-r':
       case '--recursive':
         options.recursive = true;
+        break;
+      case '--auto-best':
+        options.autoBest = true;
+        break;
+      case '--target-size':
+      case '--target-size-kb':
+        options.targetSizeKb = readInteger(argv, ++index, arg, 10, 100000);
         break;
       case '--allow-larger':
         options.keepOriginalIfLarger = false;
@@ -242,9 +257,100 @@ function isSupportedInput(filePath) {
 
 async function processImage(inputPath, outputDir, options) {
   const inputInfo = await stat(inputPath);
-  const metadata = await sharp(inputPath).metadata();
+  const metadata = await sharp(inputPath, { failOn: 'none' }).metadata();
+  const inputBytes = inputInfo.size;
+  const stem = path.parse(inputPath).name;
 
-  let pipeline = sharp(inputPath).rotate();
+  let selected;
+  let candidates = [];
+  let message = '';
+
+  if (options.autoBest) {
+    const best = await compressAutoBest(inputPath, options, metadata);
+    selected = best.selected;
+    candidates = best.candidates;
+    message = best.message;
+  } else {
+    selected = await compressLocal(inputPath, options.format, options, metadata);
+  }
+
+  if (options.keepOriginalIfLarger && selected.buffer.length > inputBytes) {
+    const originalExtension = path.extname(inputPath).toLowerCase();
+    const outputPath = uniqueOutputPath(outputDir, stem, originalExtension);
+    await copyFile(inputPath, outputPath);
+    return {
+      input: inputPath,
+      output: outputPath,
+      status: 'original-kept',
+      method: 'original-kept',
+      format: normalizeFormat(metadata.format),
+      quality: null,
+      inputBytes,
+      outputBytes: inputBytes,
+      savedBytes: 0,
+      savedPercent: 0,
+      width: metadata.width ?? null,
+      height: metadata.height ?? null,
+      targetBytes: options.targetSizeKb ? options.targetSizeKb * 1024 : null,
+      targetReached: selected.targetReached ?? null,
+      candidates,
+      message: [message, 'Optimized result was larger, so the original file was kept.'].filter(Boolean).join(' ')
+    };
+  }
+
+  const extension = FORMAT_EXTENSION[selected.format] || path.extname(inputPath).toLowerCase();
+  const outputPath = uniqueOutputPath(outputDir, stem, extension);
+  await writeFile(outputPath, selected.buffer);
+
+  const savedBytes = inputBytes - selected.buffer.length;
+  const savedPercent = inputBytes > 0 ? roundOne((savedBytes / inputBytes) * 100) : 0;
+  return {
+    input: inputPath,
+    output: outputPath,
+    status: selected.buffer.length < inputBytes ? 'optimized' : selected.buffer.length === inputBytes ? 'same-size' : 'larger',
+    method: selected.method,
+    format: selected.format,
+    quality: selected.quality ?? null,
+    inputBytes,
+    outputBytes: selected.buffer.length,
+    savedBytes,
+    savedPercent,
+    width: selected.width ?? null,
+    height: selected.height ?? null,
+    targetBytes: options.targetSizeKb ? options.targetSizeKb * 1024 : null,
+    targetReached: selected.targetReached ?? null,
+    candidates,
+    message
+  };
+}
+
+async function compressLocal(inputPath, format, options, metadata) {
+  const targetBytes = options.targetSizeKb && isQualityFormat(format) ? options.targetSizeKb * 1024 : null;
+  const build = (quality) => buildSharpPipeline(inputPath, options, format, quality, metadata);
+
+  if (targetBytes) {
+    const target = await encodeToTargetSize(build, targetBytes, options.quality);
+    return {
+      ...target,
+      method: `local-target-${format}`
+    };
+  }
+
+  const { data, info } = await build(options.quality).toBuffer({ resolveWithObject: true });
+  return {
+    buffer: data,
+    format: normalizeFormat(info.format || format),
+    width: info.width ?? null,
+    height: info.height ?? null,
+    quality: format === 'png' ? options.quality : options.quality,
+    targetReached: null,
+    method: `local-${format}`
+  };
+}
+
+function buildSharpPipeline(inputPath, options, format, quality, metadata) {
+  let pipeline = sharp(inputPath, { failOn: 'none', animated: false }).rotate();
+
   if (options.maxWidth || options.maxHeight) {
     pipeline = pipeline.resize({
       width: options.maxWidth ?? undefined,
@@ -254,51 +360,96 @@ async function processImage(inputPath, outputDir, options) {
     });
   }
 
-  if (options.format === 'jpeg') {
-    if (metadata.hasAlpha) pipeline = pipeline.flatten({ background: options.background });
-    pipeline = pipeline.jpeg({ quality: options.quality, mozjpeg: true });
-  } else if (options.format === 'png') {
-    pipeline = pipeline.png({ compressionLevel: 9, adaptiveFiltering: true });
+  if (format === 'jpeg') {
+    pipeline = pipeline.flatten({ background: options.background }).jpeg({ quality, mozjpeg: true });
+  } else if (format === 'png') {
+    pipeline = pipeline.png({ compressionLevel: 9, effort: 10, palette: true, quality });
   } else {
-    pipeline = pipeline.webp({ quality: options.quality, effort: 4 });
+    pipeline = pipeline.webp({ quality, effort: 5, alphaQuality: metadata.hasAlpha ? quality : undefined });
   }
 
-  const outputBuffer = await pipeline.toBuffer();
-  const inputBytes = inputInfo.size;
-  const stem = path.parse(inputPath).name;
+  return pipeline;
+}
 
-  if (options.keepOriginalIfLarger && outputBuffer.length > inputBytes) {
-    const outputPath = uniqueOutputPath(outputDir, stem, path.extname(inputPath).toLowerCase());
-    await copyFile(inputPath, outputPath);
-    return {
-      input: inputPath,
-      output: outputPath,
-      status: 'original-kept',
-      format: normalizeFormat(metadata.format),
-      inputBytes,
-      outputBytes: inputBytes,
-      savedBytes: 0,
-      savedPercent: 0
+async function encodeToTargetSize(build, targetBytes, preferredQuality) {
+  let low = 1;
+  let high = Math.min(100, Math.max(1, preferredQuality));
+  let bestUnder = null;
+  let smallest = null;
+
+  for (let step = 0; step < 7 && low <= high; step += 1) {
+    const quality = Math.round((low + high) / 2);
+    const { data, info } = await build(quality).toBuffer({ resolveWithObject: true });
+    const result = {
+      buffer: data,
+      format: normalizeFormat(info.format),
+      width: info.width ?? null,
+      height: info.height ?? null,
+      quality,
+      targetReached: data.length <= targetBytes
     };
+
+    if (!smallest || data.length < smallest.buffer.length) smallest = result;
+    if (data.length <= targetBytes) {
+      bestUnder = result;
+      low = quality + 1;
+    } else {
+      high = quality - 1;
+    }
   }
 
-  const extension = FORMAT_EXTENSION[options.format];
-  const outputPath = uniqueOutputPath(outputDir, stem, extension);
-  await writeFile(outputPath, outputBuffer);
+  if (!smallest) throw new Error('Target-size search could not produce an output candidate.');
+  return bestUnder || { ...smallest, targetReached: false };
+}
 
-  const savedBytes = inputBytes - outputBuffer.length;
-  const savedPercent = inputBytes > 0 ? roundOne((savedBytes / inputBytes) * 100) : 0;
+async function compressAutoBest(inputPath, options, metadata) {
+  const hasAlpha = Boolean(metadata.hasAlpha);
+  const formats = hasAlpha ? ['webp', 'png'] : ['webp', 'jpeg'];
+  if (!formats.includes(options.format)) formats.unshift(options.format);
+
+  const candidates = [];
+  const valid = [];
+
+  for (const format of [...new Set(formats)]) {
+    try {
+      const result = await compressLocal(inputPath, format, options, metadata);
+      result.method = `auto-best-${format}${options.targetSizeKb && isQualityFormat(format) ? '-target' : ''}`;
+      valid.push(result);
+      candidates.push(toCandidateSummary(result));
+    } catch (error) {
+      candidates.push({
+        method: `auto-best-${format}`,
+        format,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  if (!valid.length) throw new Error('Auto Best could not create any local candidate.');
+  valid.sort((a, b) => a.buffer.length - b.buffer.length);
+  const selected = valid[0];
+
   return {
-    input: inputPath,
-    output: outputPath,
-    status: 'optimized',
-    format: options.format,
-    quality: options.format === 'png' ? null : options.quality,
-    inputBytes,
-    outputBytes: outputBuffer.length,
-    savedBytes,
-    savedPercent
+    selected,
+    candidates,
+    message: `Auto Best selected ${selected.format.toUpperCase()} as the smallest local result.`
   };
+}
+
+function toCandidateSummary(result) {
+  return {
+    method: result.method,
+    size: result.buffer.length,
+    format: result.format,
+    quality: result.quality ?? null,
+    width: result.width ?? null,
+    height: result.height ?? null,
+    targetReached: result.targetReached ?? null
+  };
+}
+
+function isQualityFormat(format) {
+  return format === 'jpeg' || format === 'webp';
 }
 
 function uniqueOutputPath(outputDir, stem, extension) {
@@ -318,7 +469,11 @@ function normalizeFormat(value) {
 
 function printResult(result) {
   const label = result.status === 'original-kept' ? 'KEPT' : 'OK';
-  console.log(`${label} ${path.basename(result.input)} -> ${path.basename(result.output)} | ${formatBytes(result.inputBytes)} -> ${formatBytes(result.outputBytes)} | ${formatSavings(result.savedPercent)}`);
+  const mode = result.method ? ` | ${result.method}` : '';
+  const target = result.targetBytes
+    ? ` | target ${formatBytes(result.targetBytes)} ${result.targetReached === true ? 'reached' : result.targetReached === false ? 'not reached' : 'n/a'}`
+    : '';
+  console.log(`${label} ${path.basename(result.input)} -> ${path.basename(result.output)} | ${formatBytes(result.inputBytes)} -> ${formatBytes(result.outputBytes)} | ${formatSavings(result.savedPercent)}${mode}${target}`);
 }
 
 function formatSavings(percent) {
@@ -340,5 +495,5 @@ function roundOne(value) {
 }
 
 function printHelp() {
-  console.log(`OpenCompress CLI ${VERSION} (preview)\n\nUsage:\n  npm run cli -- <files-or-directories...> [options]\n  node bin/opencompress.mjs <files-or-directories...> [options]\n\nOptions:\n  -o, --output <dir>       Output directory (default: opencompress-output)\n  -f, --format <format>    webp, jpg/jpeg or png (default: webp)\n  -q, --quality <1-100>    Lossy output quality (default: 82)\n      --max-width <px>     Resize to fit within this width\n      --max-height <px>    Resize to fit within this height\n  -r, --recursive          Scan nested directories\n      --allow-larger       Keep optimized output even when it is larger\n      --background <hex>   JPG alpha background (default: #ffffff)\n      --json               Print machine-readable JSON summary\n  -v, --version            Print version\n  -h, --help               Show this help\n\nSupported inputs:\n  JPG, PNG, WebP, TIFF and BMP\n\nExamples:\n  npm run cli -- ./images --format webp --quality 82 --max-width 1600\n  npm run cli -- ./catalog --recursive --format jpg --quality 88 -o ./optimized\n  npm run cli -- hero.png --format webp --json\n\nThe CLI preview is local-only. It does not call reSmush.it or any other external image service.`);
+  console.log(`OpenCompress CLI ${VERSION}\n\nUsage:\n  npm run cli -- <files-or-directories...> [options]\n  node bin/opencompress.mjs <files-or-directories...> [options]\n\nOptions:\n  -o, --output <dir>       Output directory (default: opencompress-output)\n  -f, --format <format>    webp, jpg/jpeg or png (default: webp)\n  -q, --quality <1-100>    Preferred lossy quality (default: 82)\n      --auto-best          Test local candidates and keep the smallest\n      --target-size <KB>   Alias for --target-size-kb\n      --target-size-kb <KB> Search highest JPG/WebP quality under target\n      --max-width <px>     Resize to fit within this width\n      --max-height <px>    Resize to fit within this height\n  -r, --recursive          Scan nested directories\n      --allow-larger       Keep optimized output even when it is larger\n      --background <hex>   JPG alpha background (default: #ffffff)\n      --json               Print machine-readable JSON summary\n  -v, --version            Print version\n  -h, --help               Show this help\n\nSupported inputs:\n  JPG, PNG, WebP, TIFF and BMP\n\nExamples:\n  npm run cli -- ./images --format webp --quality 82 --max-width 1600\n  npm run cli -- ./catalog --recursive --auto-best -o ./optimized\n  npm run cli -- hero.jpg --format webp --target-size-kb 300 --json\n  npm run cli -- ./products --auto-best --target-size 250 --max-width 1600\n\nAuto Best mirrors the local GUI strategy: WebP + JPEG for images without alpha, and WebP + PNG for images with alpha. If --format adds a different candidate, it is tested too. Target-size search uses up to seven quality-search steps for JPG/WebP and reports targetReached in JSON.\n\nThe CLI is local-only. It does not call reSmush.it or any other external image service.`);
 }
