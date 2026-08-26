@@ -65,7 +65,7 @@ Short conventional-style subjects are preferred, for example:
 fix: prevent invalid job deletion
 feat: add AVIF output
 perf: stream ZIP downloads
- docs: clarify local privacy mode
+docs: clarify local privacy mode
 ```
 
 ## Reporting bugs
