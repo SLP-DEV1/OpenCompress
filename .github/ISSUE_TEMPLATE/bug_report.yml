@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible problem in OpenCompress Studio
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not upload confidential source images or secrets.
+  - type: input
+    id: version
+    attributes:
+      label: OpenCompress version or commit
+      placeholder: 2.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node.js version and browser
+      placeholder: Windows 11, Node 22.x, Chrome 151
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Compression mode
+      options:
+        - Local only
+        - Auto Best local
+        - reSmush.it API
+        - Auto Compare
+        - Not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Add ...
+        2. Select ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove private file names, images, paths, tokens and other sensitive data first.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first.
+          required: true
+        - label: I removed confidential data from this report.
+          required: true

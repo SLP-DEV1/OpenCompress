@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest an improvement for OpenCompress Studio
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the workflow problem first, then the feature you think would solve it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: What is difficult, repetitive or missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Compression / formats
+        - Batch workflow
+        - UI / UX
+        - Presets / e-commerce
+        - Privacy / security
+        - Performance
+        - Developer experience
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy impact
+      options:
+        - label: This feature can preserve the local-first default.
+          required: true
