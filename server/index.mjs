@@ -1,11 +1,18 @@
 import express from 'express';
 import multer from 'multer';
-import sharp from 'sharp';
 import { createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import {
+  compressAutoBest,
+  compressLocal,
+  extensionFromFormat,
+  formatFromMime,
+  readMetadata,
+  toCandidateSummary
+} from '../lib/compression-core.mjs';
 
 const require = createRequire(import.meta.url);
 const { ZipFile } = require('yazl');
@@ -367,115 +374,6 @@ async function processOneImage(file, settings, jobDir, jobId, index) {
   };
 }
 
-async function compressLocal(input, settings, mime, existingMetadata = null) {
-  const metadata = existingMetadata || await readMetadata(input);
-  const targetFormat = resolveTargetFormat(settings.format, mime, metadata.format);
-  const targetBytes = settings.targetSizeEnabled && isQualityFormat(targetFormat) ? settings.targetSizeKb * 1024 : null;
-
-  const build = (quality) => buildSharpPipeline(input, settings, targetFormat, quality, metadata);
-
-  if (targetBytes) {
-    const targetResult = await encodeToTargetSize(build, targetBytes, settings.quality);
-    return {
-      ...targetResult,
-      method: 'local-target',
-      extension: extensionFromFormat(targetResult.format),
-      requiresFlattenWarning: metadata.hasAlpha && targetFormat === 'jpeg'
-    };
-  }
-
-  const { data, info } = await build(settings.quality).toBuffer({ resolveWithObject: true });
-  return {
-    buffer: data,
-    format: info.format,
-    width: info.width,
-    height: info.height,
-    quality: settings.quality,
-    targetReached: null,
-    extension: extensionFromFormat(info.format),
-    method: 'local',
-    requiresFlattenWarning: metadata.hasAlpha && targetFormat === 'jpeg'
-  };
-}
-
-function buildSharpPipeline(input, settings, targetFormat, quality, metadata) {
-  let image = sharp(input, { failOn: 'none', animated: false }).rotate();
-
-  if (settings.resizeEnabled) {
-    image = image.resize({
-      width: settings.maxWidth,
-      height: settings.maxHeight,
-      fit: 'inside',
-      withoutEnlargement: true
-    });
-  }
-
-  if (settings.keepMetadata) image = image.withMetadata();
-
-  if (targetFormat === 'jpeg') {
-    image = image.flatten({ background: settings.background || '#ffffff' }).jpeg({ quality, mozjpeg: true });
-  } else if (targetFormat === 'png') {
-    image = image.png({ compressionLevel: 9, effort: 10, palette: true, quality });
-  } else if (targetFormat === 'webp') {
-    image = image.webp({ quality, effort: 5, alphaQuality: metadata.hasAlpha ? quality : undefined });
-  } else {
-    image = image.png({ compressionLevel: 9, effort: 10 });
-  }
-
-  return image;
-}
-
-async function encodeToTargetSize(build, targetBytes, preferredQuality) {
-  let low = 1;
-  let high = Math.min(100, Math.max(1, preferredQuality));
-  let bestUnder = null;
-  let smallest = null;
-
-  for (let step = 0; step < 7 && low <= high; step += 1) {
-    const quality = Math.round((low + high) / 2);
-    const { data, info } = await build(quality).toBuffer({ resolveWithObject: true });
-    const result = { buffer: data, format: info.format, width: info.width, height: info.height, quality, targetReached: data.length <= targetBytes };
-    if (!smallest || data.length < smallest.buffer.length) smallest = result;
-    if (data.length <= targetBytes) {
-      bestUnder = result;
-      low = quality + 1;
-    } else {
-      high = quality - 1;
-    }
-  }
-
-  if (!smallest) throw new Error('Target-size search could not produce an output candidate.');
-  return bestUnder || { ...smallest, targetReached: false };
-}
-
-async function compressAutoBest(input, settings, mime, metadata) {
-  const candidates = [];
-  const hasAlpha = Boolean(metadata.hasAlpha);
-  const formats = hasAlpha ? ['webp', 'png'] : ['webp', 'jpeg'];
-  if (settings.format !== 'original' && !formats.includes(settings.format)) formats.unshift(settings.format);
-
-  for (const format of [...new Set(formats)]) {
-    try {
-      const result = await compressLocal(input, { ...settings, format }, mime, metadata);
-      result.method = `auto-best-${format}`;
-      candidates.push(result);
-    } catch (error) {
-      candidates.push({ error: getErrorMessage(error), method: `auto-best-${format}` });
-    }
-  }
-
-  const valid = candidates.filter((item) => item.buffer);
-  if (!valid.length) throw new Error('Auto Best could not create any local candidate.');
-  valid.sort((a, b) => a.buffer.length - b.buffer.length);
-  const selected = valid[0];
-
-  return {
-    selected,
-    candidates: candidates.map((item) => item.buffer ? toCandidateSummary(item, item.method) : { method: item.method, error: item.error }),
-    message: `Auto Best selected ${selected.format?.toUpperCase?.() || selected.format} as the smallest local result.`
-  };
-}
-
 async function compressResmush(input, originalName, mime, settings, existingMetadata = null) {
   if (input.length >= 5 * 1024 * 1024) {
     throw new Error('File is too large for reSmush.it. Maximum supported size is under 5 MB.');
@@ -584,30 +482,10 @@ function cleanOldJobs() {
   }
 }
 
-async function readMetadata(input, fallback = {}) {
-  try {
-    return await sharp(input, { failOn: 'none' }).metadata();
-  } catch {
-    return fallback || {};
-  }
-}
-
 function getOutputBaseName(originalName, settings, index) {
   if (!settings.renameEnabled) return sanitizeBaseName(originalName);
   const number = String(settings.renameStart + index).padStart(settings.renamePad, '0');
   return sanitizeBaseName(`${settings.renameBase}-${number}`);
-}
-
-function toCandidateSummary(result, method) {
-  return {
-    method,
-    size: result.buffer?.length || 0,
-    format: result.format || null,
-    quality: result.quality ?? null,
-    width: result.width || null,
-    height: result.height || null,
-    targetReached: result.targetReached ?? null
-  };
 }
 
 function statusFromSizes(outputSize, inputSize, method) {
@@ -672,26 +550,6 @@ function sanitizeColor(value) {
   return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : '#ffffff';
 }
 
-function isQualityFormat(format) {
-  return format === 'jpeg' || format === 'webp';
-}
-
-function resolveTargetFormat(format, mime, detectedFormat) {
-  if (format !== 'original') return format;
-  const detected = detectedFormat || formatFromMime(mime);
-  return ['jpeg', 'png', 'webp'].includes(detected) ? detected : 'png';
-}
-
-function formatFromMime(mime) {
-  if (/jpe?g/i.test(mime)) return 'jpeg';
-  if (/png/i.test(mime)) return 'png';
-  if (/webp/i.test(mime)) return 'webp';
-  if (/gif/i.test(mime)) return 'gif';
-  if (/tiff?/i.test(mime)) return 'tiff';
-  if (/bmp/i.test(mime)) return 'bmp';
-  return 'png';
-}
-
 function guessMime(fileName) {
   const ext = path.extname(fileName || '').toLowerCase();
   if (['.jpg', '.jpeg'].includes(ext)) return 'image/jpeg';
@@ -712,16 +570,6 @@ function contentTypeFromExtension(fileName) {
   if (ext === '.tif' || ext === '.tiff') return 'image/tiff';
   if (ext === '.bmp') return 'image/bmp';
   return 'application/octet-stream';
-}
-
-function extensionFromFormat(format) {
-  if (format === 'jpeg') return 'jpg';
-  if (format === 'tiff') return 'tif';
-  if (format === 'webp') return 'webp';
-  if (format === 'png') return 'png';
-  if (format === 'gif') return 'gif';
-  if (format === 'bmp') return 'bmp';
-  return 'png';
 }
 
 function getErrorMessage(error) {
