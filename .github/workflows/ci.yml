@@ -35,6 +35,14 @@ jobs:
       - name: Check server syntax
         run: node --check server/index.mjs
 
+      - name: Smoke-test CLI
+        run: |
+          node --check bin/opencompress.mjs
+          npm run cli -- --help
+          node --input-type=module -e "import sharp from 'sharp'; await sharp({ create: { width: 32, height: 32, channels: 4, background: '#ff0000' } }).png().toFile('/tmp/opencompress-ci.png');"
+          npm run cli -- /tmp/opencompress-ci.png --format webp --output /tmp/opencompress-cli-output
+          test -s /tmp/opencompress-cli-output/opencompress-ci.webp
+
       - name: Typecheck strict
         run: npm run typecheck:strict
 
