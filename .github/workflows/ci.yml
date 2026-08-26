@@ -39,9 +39,19 @@ jobs:
         run: |
           node --check bin/opencompress.mjs
           npm run cli -- --help
+
           node --input-type=module -e "import sharp from 'sharp'; await sharp({ create: { width: 32, height: 32, channels: 4, background: '#ff0000' } }).png().toFile('/tmp/opencompress-ci.png');"
           npm run cli -- /tmp/opencompress-ci.png --format webp --output /tmp/opencompress-cli-output
           test -s /tmp/opencompress-cli-output/opencompress-ci.webp
+
+          node --input-type=module -e "import crypto from 'node:crypto'; import sharp from 'sharp'; const data=crypto.randomBytes(256*256*3); await sharp(data,{raw:{width:256,height:256,channels:3}}).jpeg({quality:95}).toFile('/tmp/opencompress-noise.jpg');"
+          npm run --silent cli -- /tmp/opencompress-noise.jpg --format webp --quality 90 --target-size-kb 20 --output /tmp/opencompress-target --json > /tmp/opencompress-target.json
+          node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('/tmp/opencompress-target.json','utf8')); if(r.processed!==1 || r.results[0].targetReached!==true || r.results[0].outputBytes>20*1024) process.exit(1);"
+          test -s /tmp/opencompress-target/opencompress-noise.webp
+
+          npm run --silent cli -- /tmp/opencompress-noise.jpg --auto-best --quality 82 --output /tmp/opencompress-best --json > /tmp/opencompress-best.json
+          node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('/tmp/opencompress-best.json','utf8')); const x=r.results[0]; if(r.mode!=='auto-best' || !x || !x.method.startsWith('auto-best-') || !Array.isArray(x.candidates) || x.candidates.length<2) process.exit(1);"
+          test -n "$(find /tmp/opencompress-best -type f -size +0c -print -quit)"
 
       - name: Typecheck strict
         run: npm run typecheck:strict

@@ -61,9 +61,9 @@ npm run dev
 
 Open `http://127.0.0.1:5174`.
 
-## CLI preview
+## CLI
 
-OpenCompress 2.1 also includes a local-only CLI foundation for scripts, CI jobs and large folders. It intentionally does not call reSmush.it or another external image service.
+The local-only CLI is built for scripts, CI jobs and large folders. It does not call reSmush.it or another external image service.
 
 ```bash
 # Convert a folder to WebP at quality 82
@@ -72,11 +72,17 @@ npm run cli -- ./images --format webp --quality 82
 # Resize a complete catalog recursively
 npm run cli -- ./catalog --recursive --format webp --quality 82 --max-width 1600 --max-height 1600 -o ./optimized
 
+# Auto Best: test local candidates and keep the smallest
+npm run cli -- ./catalog --recursive --auto-best -o ./optimized
+
+# Target size: search for the highest WebP quality at or below 300 KB
+npm run cli -- hero.jpg --format webp --quality 92 --target-size-kb 300
+
+# Combine Auto Best + target size for a batch
+npm run cli -- ./products --auto-best --target-size 250 --max-width 1600 --json
+
 # JPEG output with a white background for transparent inputs
 npm run cli -- hero.png --format jpg --quality 90 --background '#ffffff'
-
-# Machine-readable result summary
-npm run cli -- ./images --format webp --json
 ```
 
 CLI options:
@@ -84,7 +90,10 @@ CLI options:
 ```text
 -o, --output <dir>       Output directory
 -f, --format <format>    webp, jpg/jpeg or png
--q, --quality <1-100>    Lossy output quality
+-q, --quality <1-100>    Preferred lossy quality
+    --auto-best          Test local candidates and keep the smallest
+    --target-size <KB>   Alias for --target-size-kb
+    --target-size-kb <KB> Search highest JPG/WebP quality under target
     --max-width <px>     Maximum output width
     --max-height <px>    Maximum output height
 -r, --recursive          Scan nested directories
@@ -93,7 +102,9 @@ CLI options:
     --json               Machine-readable JSON summary
 ```
 
-Run `npm run cli -- --help` for the complete usage text. The CLI currently supports JPG, PNG, WebP, TIFF and BMP inputs. Auto Best, target-size search and reSmush.it remain GUI-only for now.
+Auto Best mirrors the local GUI strategy: images without alpha test WebP + JPEG, while images with alpha test WebP + PNG. A different explicit `--format` is added as another candidate. Target-size mode uses up to seven quality-search steps for JPG/WebP and reports the selected quality plus `targetReached` in JSON.
+
+Run `npm run cli -- --help` for the complete usage text. The CLI supports JPG, PNG, WebP, TIFF and BMP inputs. reSmush.it and Auto Compare remain GUI-only.
 
 ## Feature highlights
 
@@ -101,7 +112,9 @@ Run `npm run cli -- --help` for the complete usage text. The CLI currently suppo
 - JPG, PNG, WebP, GIF, TIF and BMP input in the GUI
 - JPG, PNG and WebP output
 - Local compression with `sharp`
-- Local-only CLI preview for scripts and folder processing
+- Local-only CLI for scripts and folder processing
+- CLI Auto Best candidate selection
+- CLI target-size search for JPG/WebP
 - Auto Best local mode that tests multiple output candidates and keeps the smallest
 - Optional reSmush.it API compression
 - Auto Compare local vs reSmush.it
@@ -127,7 +140,7 @@ Run `npm run cli -- --help` for the complete usage text. The CLI currently suppo
 | **Auto Best local** | Yes | No | Smallest local result without cloud uploads |
 | **reSmush.it API** | No | Yes | Explicit external compression |
 | **Auto Compare** | No | Yes | Comparing local output with reSmush.it |
-| **CLI preview** | Yes | No | Scripts, CI jobs and local folders |
+| **CLI** | Yes | No | Scripts, CI jobs and local folders |
 
 Local-only processing stores temporary GUI job files in `.opencompress/` and removes old jobs automatically after the configured TTL. CLI output is written directly to the selected output directory.
 
@@ -176,9 +189,9 @@ Avoid JPG unless you intentionally want to flatten transparency
 
 ## Target file size
 
-Enable **Target file size** and enter a maximum KB value. For JPG and WebP, OpenCompress searches for the highest quality that gets under the requested target when possible.
+Enable **Target file size** in the GUI or pass `--target-size-kb <KB>` in the CLI. For JPG and WebP, OpenCompress searches for the highest quality that gets under the requested target when possible.
 
-If the target cannot be reached, the result is still returned with a warning instead of silently failing.
+If the target cannot be reached, the result is still returned and `targetReached` is reported as `false` instead of silently failing.
 
 ## reSmush.it support
 
@@ -239,7 +252,7 @@ OPENCOMPRESS_USER_AGENT=OpenCompress-Studio/2.1.0
 
 ```text
 OpenCompress/
-├─ bin/                  Local CLI preview
+├─ bin/                  Local CLI
 ├─ src/                  React UI
 ├─ server/               Local Express + Sharp processing API
 ├─ docs/                 Repository media and documentation
@@ -253,7 +266,8 @@ OpenCompress/
 
 Good next contributions include:
 
-- CLI parity for Auto Best and target-size mode
+- Shared compression core for GUI + CLI to prevent behavior drift
+- CLI parity for SEO rename and presets
 - Real per-file streaming progress
 - Drag-and-drop file sorting
 - AVIF export
