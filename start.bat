@@ -43,7 +43,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-node -e "const [M,m]=process.versions.node.split('.').map(Number); process.exit((M===20&&m>=19)||M>=22?0:1)"
+node -e "const [M,m]=process.versions.node.split('.').map(Number); process.exit((M===20&&m>=19)||(M===22&&m>=12)||M>22?0:1)"
 if errorlevel 1 (
   echo [opencompress] Your Node.js version is too old or unsupported.
   echo [opencompress] OpenCompress requires Node.js 20.19+ or Node.js 22.12+.
