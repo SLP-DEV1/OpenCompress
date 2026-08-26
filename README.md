@@ -15,7 +15,9 @@ Compress, resize, convert and SEO-rename hundreds of images locally with Sharp, 
 
 </div>
 
-![OpenCompress Studio preview](docs/screenshot.svg)
+![OpenCompress Studio workflow demo](docs/demo.gif)
+
+> **20 images → Auto Best local → before/after comparison → one ZIP.** The default local modes keep image processing on your machine.
 
 ## Why OpenCompress?
 
@@ -193,6 +195,7 @@ OpenCompress/
 ├─ src/                  React UI
 ├─ server/               Local Express + Sharp processing API
 ├─ docs/                 Repository media and documentation
+├─ scripts/              Repository maintenance helpers
 ├─ .github/workflows/    CI automation
 ├─ start.bat             Windows one-click build + start
 ├─ stop.bat              Windows local-server stop helper
