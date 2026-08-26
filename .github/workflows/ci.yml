@@ -35,6 +35,11 @@ jobs:
       - name: Check server syntax
         run: node --check server/index.mjs
 
+      - name: Test shared compression core
+        run: |
+          node --check lib/compression-core.mjs
+          node --input-type=module -e "import crypto from 'node:crypto'; import sharp from 'sharp'; import { compressAutoBest, compressLocal } from './lib/compression-core.mjs'; const raw=crypto.randomBytes(192*192*3); const input=await sharp(raw,{raw:{width:192,height:192,channels:3}}).jpeg({quality:95}).toBuffer(); const target=await compressLocal(input,{format:'webp',quality:90,targetSizeEnabled:true,targetSizeKb:20},'image/jpeg'); if(!target.buffer?.length || target.buffer.length>20*1024 || target.targetReached!==true || target.method!=='local-target') process.exit(1); const best=await compressAutoBest(input,{format:'webp',quality:82},'image/jpeg'); if(!best.selected?.buffer?.length || best.candidates.length<2 || !best.selected.method.startsWith('auto-best-')) process.exit(1);"
+
       - name: Smoke-test CLI
         run: |
           node --check bin/opencompress.mjs
