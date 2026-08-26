@@ -28,6 +28,18 @@ Most image compressors are either single-file tools, cloud services or too gener
 - **Safe defaults:** metadata removal and keep-original-if-larger are enabled by design.
 - **Optional external comparison:** reSmush.it can be enabled explicitly and automatically falls back to local compression when possible.
 
+## Where it fits
+
+This is a workflow comparison, not a claim that one encoder always produces smaller files. Results depend on image content, codec and settings.
+
+| Tool | Processing model | Strong fit | OpenCompress difference |
+| --- | --- | --- | --- |
+| **OpenCompress Studio** | Local Node.js + Sharp by default; optional reSmush.it | Repeatable shop and creator batches | Presets, SEO rename, target-size mode, before/after review and ZIP batch export in one workflow |
+| **[Squoosh](https://squoosh.app/)** | Local in the browser | Hands-on visual codec tuning | OpenCompress focuses on repeatable multi-image shop workflows and can also be automated from the CLI |
+| **[TinyPNG / TinyJPG](https://tinypng.com/)** | Hosted service/API; images are sent to the service for compression | Managed web/API compression | OpenCompress can keep the complete image workflow local with no account or API key |
+
+Squoosh documents that image processing stays on-device. TinyPNG's API documentation describes uploading image data to its service for compression. OpenCompress is aimed at users who want the local model plus batch-oriented e-commerce tooling.
+
 ## Quick start
 
 ### Windows
@@ -49,12 +61,47 @@ npm run dev
 
 Open `http://127.0.0.1:5174`.
 
+## CLI preview
+
+OpenCompress 2.1 also includes a local-only CLI foundation for scripts, CI jobs and large folders. It intentionally does not call reSmush.it or another external image service.
+
+```bash
+# Convert a folder to WebP at quality 82
+npm run cli -- ./images --format webp --quality 82
+
+# Resize a complete catalog recursively
+npm run cli -- ./catalog --recursive --format webp --quality 82 --max-width 1600 --max-height 1600 -o ./optimized
+
+# JPEG output with a white background for transparent inputs
+npm run cli -- hero.png --format jpg --quality 90 --background '#ffffff'
+
+# Machine-readable result summary
+npm run cli -- ./images --format webp --json
+```
+
+CLI options:
+
+```text
+-o, --output <dir>       Output directory
+-f, --format <format>    webp, jpg/jpeg or png
+-q, --quality <1-100>    Lossy output quality
+    --max-width <px>     Maximum output width
+    --max-height <px>    Maximum output height
+-r, --recursive          Scan nested directories
+    --allow-larger       Keep optimized output even when larger
+    --background <hex>   JPG alpha background
+    --json               Machine-readable JSON summary
+```
+
+Run `npm run cli -- --help` for the complete usage text. The CLI currently supports JPG, PNG, WebP, TIFF and BMP inputs. Auto Best, target-size search and reSmush.it remain GUI-only for now.
+
 ## Feature highlights
 
 - Batch upload for up to 250 images
-- JPG, PNG, WebP, GIF, TIF and BMP input
+- JPG, PNG, WebP, GIF, TIF and BMP input in the GUI
 - JPG, PNG and WebP output
 - Local compression with `sharp`
+- Local-only CLI preview for scripts and folder processing
 - Auto Best local mode that tests multiple output candidates and keeps the smallest
 - Optional reSmush.it API compression
 - Auto Compare local vs reSmush.it
@@ -80,8 +127,9 @@ Open `http://127.0.0.1:5174`.
 | **Auto Best local** | Yes | No | Smallest local result without cloud uploads |
 | **reSmush.it API** | No | Yes | Explicit external compression |
 | **Auto Compare** | No | Yes | Comparing local output with reSmush.it |
+| **CLI preview** | Yes | No | Scripts, CI jobs and local folders |
 
-Local-only processing stores temporary job files in `.opencompress/` and removes old jobs automatically after the configured TTL.
+Local-only processing stores temporary GUI job files in `.opencompress/` and removes old jobs automatically after the configured TTL. CLI output is written directly to the selected output directory.
 
 > If you bind `OPENCOMPRESS_HOST` to a non-loopback address, the local API becomes reachable from your network. Keep the default `127.0.0.1` unless you intentionally want remote access.
 
@@ -134,7 +182,7 @@ If the target cannot be reached, the result is still returned with a warning ins
 
 ## reSmush.it support
 
-reSmush.it is optional and is never used by Local only or Auto Best local mode.
+reSmush.it is optional and is never used by Local only, Auto Best local or CLI mode.
 
 Supported external inputs:
 
@@ -166,6 +214,7 @@ Open `http://127.0.0.1:5174`.
 ```bash
 npm run dev              # Local development server with Vite middleware
 npm start                # Production server using dist/
+npm run cli -- --help    # Local CLI usage
 npm run build            # Type-check and build production assets
 npm run typecheck        # TypeScript checks
 npm run typecheck:strict # TypeScript checks including unused-code detection
@@ -190,6 +239,7 @@ OPENCOMPRESS_USER_AGENT=OpenCompress-Studio/2.1.0
 
 ```text
 OpenCompress/
+├─ bin/                  Local CLI preview
 ├─ src/                  React UI
 ├─ server/               Local Express + Sharp processing API
 ├─ docs/                 Repository media and documentation
@@ -203,6 +253,7 @@ OpenCompress/
 
 Good next contributions include:
 
+- CLI parity for Auto Best and target-size mode
 - Real per-file streaming progress
 - Drag-and-drop file sorting
 - AVIF export
