@@ -80,6 +80,8 @@ type LocalFile = {
   originalUrl: string;
 };
 
+const MAX_FILES = 250;
+
 const defaultSettings: Settings = {
   mode: 'local',
   format: 'webp',
@@ -121,7 +123,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeResult = job?.results[activeIndex] || null;
-  const activeOriginal = files.find((item) => item.file.name === activeResult?.originalName)?.originalUrl || files[activeIndex]?.originalUrl || null;
+  const activeOriginal = files[activeIndex]?.originalUrl || null;
   const activeOptimized = activeResult?.previewUrl || null;
   const failedCount = job?.results.filter((item) => item.status === 'failed').length || 0;
   const optimizedCount = job?.results.filter((item) => item.status !== 'failed').length || 0;
@@ -135,12 +137,20 @@ export default function App() {
   }
 
   function addFiles(selectedFiles: FileList | File[]) {
-    const incoming = Array.from(selectedFiles).filter(supportedFile);
-    if (!incoming.length) {
+    const supported = Array.from(selectedFiles).filter(supportedFile);
+    if (!supported.length) {
       setError('Please select JPG, PNG, WebP, GIF, TIF or BMP images.');
       return;
     }
-    setError(null);
+
+    const room = Math.max(0, MAX_FILES - files.length);
+    const incoming = supported.slice(0, room);
+    if (!incoming.length) {
+      setError(`A batch can contain at most ${MAX_FILES} images.`);
+      return;
+    }
+
+    setError(incoming.length < supported.length ? `Only the first ${MAX_FILES} images were added. Split larger batches into multiple runs.` : null);
     setJob(null);
     setFiles((current) => [
       ...current,
@@ -238,11 +248,17 @@ export default function App() {
             onDragOver={(event) => event.preventDefault()}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             role="button"
             tabIndex={0}
           >
             <strong>Drop images here</strong>
-            <span>JPG, PNG, WebP, GIF, TIF or BMP</span>
+            <span>JPG, PNG, WebP, GIF, TIF or BMP · up to {MAX_FILES} files</span>
             <input ref={fileInputRef} hidden multiple type="file" accept="image/*,.tif,.tiff,.bmp" onChange={handleInputChange} />
           </div>
 
