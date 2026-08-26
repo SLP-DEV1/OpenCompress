@@ -1,0 +1,48 @@
+name: Prepare growth assets
+
+on:
+  push:
+    branches: [feat/star-growth-assets]
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feat/star-growth-assets
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+
+      - name: Sync package lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Install asset generator dependency
+        run: python3 -m pip install --disable-pip-version-check pillow
+
+      - name: Generate README demo and social preview
+        run: python3 scripts/generate_repo_assets.py
+
+      - name: Commit generated files
+        shell: bash
+        run: |
+          git add package-lock.json docs/demo.gif docs/social-preview.png
+          if git diff --cached --quiet; then
+            echo "Nothing to update."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: generate demo assets and sync lockfile"
+          git push origin HEAD:feat/star-growth-assets
